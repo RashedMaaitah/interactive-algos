@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Link } from "react-router";
+import type { LucideIcon } from "lucide-react";
 import {
   ExternalLink,
   GitBranch,
@@ -16,16 +17,24 @@ import type { Route } from "./+types/home";
 
 /** Swap in your real URLs anytime */
 const SITE_LINKS = {
-  github: "https://github.com/rashed/interactive-algos",
+  github: "https://github.com/RashedMaaitah/interactive-algos",
   portfolio: "https://rashed.dev",
-  linkedin: "https://www.linkedin.com/in/rashed",
+  linkedin: "https://www.linkedin.com/in/rashed-maaitah",
 } as const;
 
-const miniApps = [
+type MiniApp = {
+  icon: LucideIcon;
+  name: string;
+  description: string;
+  to?: string;
+};
+
+const miniApps: MiniApp[] = [
   {
     icon: Map,
     name: "Pathfinding Visualizer",
     description: "Watch BFS & DFS find paths in real time!",
+    to: "/pathfinding",
   },
   {
     icon: GitBranch,
@@ -37,7 +46,7 @@ const miniApps = [
     name: "Puzzle Lab",
     description: "Classic puzzles with step-by-step reveals.",
   },
-] as const;
+];
 
 export function meta({ }: Route.MetaArgs) {
   return [
@@ -72,42 +81,157 @@ function runHeroCanvas(el: HTMLCanvasElement) {
   const ro = new ResizeObserver(fit);
   ro.observe(el);
 
+  const nodes = [
+    { x: 0.5, y: 0.12 }, // 0 - root
+    { x: 0.27, y: 0.35 }, // 1
+    { x: 0.73, y: 0.35 }, // 2
+    { x: 0.15, y: 0.58 }, // 3
+    { x: 0.39, y: 0.58 }, // 4
+    { x: 0.61, y: 0.58 }, // 5
+    { x: 0.85, y: 0.58 }, // 6
+    { x: 0.08, y: 0.80 }, // 7
+    { x: 0.22, y: 0.80 }, // 8
+    { x: 0.33, y: 0.80 }, // 9
+    { x: 0.47, y: 0.80 }, // 10
+  ];
+
+  const edges = [
+    [0, 1], [0, 2],
+    [1, 3], [1, 4],
+    [2, 5], [2, 6],
+    [3, 7], [3, 8],
+    [4, 9], [4, 10],
+  ];
+  const bfsOrder = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+  let visitedNodes = new Set<number>();
+  let visitedEdges = new Set<string>();
+  let currentStep = -1;
+  let stepFrame = 0;
+  const FRAMES_PER_STEP = 100;
+  const PAUSE_AFTER_DONE = 90;
+  let pauseTimer = 0;
+  let done = false;
+
+  function edgeKey(a: number, b: number) {
+    return `${Math.min(a, b)}-${Math.max(a, b)}`;
+  }
+
+  function edgesRevealedAt(step: number): string[] {
+    const node = bfsOrder[step];
+    const prev = bfsOrder.slice(0, step);
+    return edges
+      .filter(([a, b]) => (a === node && prev.includes(b)) || (b === node && prev.includes(a)))
+      .map(([a, b]) => edgeKey(a, b));
+  }
+
+  function reset() {
+    visitedNodes = new Set();
+    visitedEdges = new Set();
+    currentStep = -1;
+    stepFrame = 0;
+    pauseTimer = 0;
+    done = false;
+    frame = 0;
+  }
+
+  reset();
+
   function tick(c2d: CanvasRenderingContext2D) {
     const { w, h, dpr } = size;
+
     if (w >= 2 && h >= 2) {
       c2d.setTransform(dpr, 0, 0, dpr, 0, 0);
       c2d.clearRect(0, 0, w, h);
 
-      const n = 9;
-      const step = Math.min(w, h) / (n + 1);
-      const ox = (w - step * (n - 1)) / 2;
-      const oy = (h - step * (n - 1)) / 2;
-
-      for (let i = 0; i < n; i++) {
-        for (let j = 0; j < n; j++) {
-          const x = ox + i * step;
-          const y = oy + j * step;
-          const dist = Math.hypot(i - 4, j - 4);
-          const phase = frame * 0.06 - dist * 0.35;
-          const glow = 0.15 + 0.4 * (0.5 + 0.5 * Math.sin(phase));
-          c2d.fillStyle = `oklch(0.92 0.03 270 / ${glow})`;
-          c2d.beginPath();
-          c2d.arc(x, y, 2 + Math.sin(phase) * 1, 0, Math.PI * 2);
-          c2d.fill();
+      if (done) {
+        pauseTimer++;
+        if (pauseTimer > PAUSE_AFTER_DONE) reset();
+      } else {
+        stepFrame++;
+        if (stepFrame >= FRAMES_PER_STEP) {
+          stepFrame = 0;
+          currentStep++;
+          if (currentStep < bfsOrder.length) {
+            const node = bfsOrder[currentStep];
+            visitedNodes.add(node);
+            edgesRevealedAt(currentStep).forEach(k => visitedEdges.add(k));
+          } else {
+            done = true;
+          }
         }
       }
 
-      const wave = Math.floor(frame * 0.1) % 9;
-      for (let i = 0; i < n; i++) {
-        for (let j = 0; j < n; j++) {
-          const d = Math.abs(i - 4) + Math.abs(j - 4);
-          if (d !== wave) continue;
-          const x = ox + i * step;
-          const y = oy + j * step;
-          c2d.strokeStyle = "oklch(0.72 0.14 264 / 0.9)";
+      const progress = stepFrame / FRAMES_PER_STEP;
+
+      // --- Draw edges ---
+      for (const [a, b] of edges) {
+        const key = edgeKey(a, b);
+        const ax = nodes[a].x * w, ay = nodes[a].y * h;
+        const bx = nodes[b].x * w, by = nodes[b].y * h;
+
+        const isVisited = visitedEdges.has(key);
+        const isActive =
+          currentStep < bfsOrder.length &&
+          edgesRevealedAt(currentStep).includes(key);
+
+        c2d.beginPath();
+        c2d.moveTo(ax, ay);
+
+        if (isActive) {
+          const tx = ax + (bx - ax) * progress;
+          const ty = ay + (by - ay) * progress;
+          c2d.lineTo(tx, ty);
+          c2d.strokeStyle = "oklch(0.65 0.18 240 / 1)";   // vivid blue
           c2d.lineWidth = 1.5;
-          c2d.strokeRect(x - 5, y - 5, 10, 10);
+        } else if (isVisited) {
+          c2d.lineTo(bx, by);
+          c2d.strokeStyle = "oklch(0.85 0.06 240 / 0.4)"; // soft blue-white
+          c2d.lineWidth = 1.5;
+        } else {
+          c2d.lineTo(bx, by);
+          c2d.strokeStyle = "oklch(1 0 0 / 0.1)";          // very faint white
+          c2d.lineWidth = 1;
         }
+
+        c2d.stroke();
+      }
+
+      // --- Draw nodes ---
+      for (let i = 0; i < nodes.length; i++) {
+        const nx = nodes[i].x * w;
+        const ny = nodes[i].y * h;
+        const isVisited = visitedNodes.has(i);
+        const isCurrent =
+          currentStep >= 0 &&
+          currentStep < bfsOrder.length &&
+          bfsOrder[currentStep] === i;
+
+        const r = isCurrent ? 5 + 3 * Math.sin(progress * Math.PI) : 5;
+
+        // Glow for active node
+        if (isCurrent) {
+          c2d.beginPath();
+          c2d.arc(nx, ny, r + 6, 0, Math.PI * 2);
+          const glow = c2d.createRadialGradient(nx, ny, 0, nx, ny, r + 6);
+          glow.addColorStop(0, "oklch(0.65 0.18 240 / 0.35)");
+          glow.addColorStop(1, "oklch(0.65 0.18 240 / 0)");
+          c2d.fillStyle = glow;
+          c2d.fill();
+        }
+
+        c2d.beginPath();
+        c2d.arc(nx, ny, r, 0, Math.PI * 2);
+
+        if (isCurrent) {
+          c2d.fillStyle = "oklch(0.75 0.18 240 / 1)";    // bright blue
+        } else if (isVisited) {
+          c2d.fillStyle = "oklch(0.9 0.04 240 / 0.6)";   // muted blue-white
+        } else {
+          c2d.fillStyle = "oklch(1 0 0 / 0.15)";          // very faint white
+        }
+
+        c2d.fill();
       }
     }
 
@@ -233,7 +357,7 @@ export default function Home() {
               experiments, no noise.
             </p>
             <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {miniApps.map(({ icon: Icon, name, description }) => (
+              {miniApps.map(({ icon: Icon, name, description, to }) => (
                 <article
                   key={name}
                   className="flex flex-col border border-border bg-card p-6 shadow-sm"
@@ -245,16 +369,26 @@ export default function Home() {
                   <p className="mt-2 flex-1 text-sm text-muted-foreground">
                     {description}
                   </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-6 w-full"
-                    disabled
-                    title="Coming soon"
-                  >
-                    Explore
-                    <span className="sr-only">(coming soon)</span>
-                  </Button>
+                  {to ? (
+                    <Button variant="outline" size="sm" className="mt-6 w-full" asChild>
+                      <Link
+                        to={to}
+                        aria-label={`Explore ${name}`}
+                      >
+                        Explore
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-6 w-full"
+                      disabled
+                      title="Coming soon"
+                    >
+                      Explore
+                    </Button>
+                  )}
                 </article>
               ))}
             </div>
